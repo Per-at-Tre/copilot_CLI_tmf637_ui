@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Trash2, ArrowLeft, Loader2, Save } from 'lucide-react';
@@ -80,6 +80,7 @@ export default function ProductFormPage() {
     control,
     setValue,
     watch,
+    reset,
     formState: { errors },
   } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -96,37 +97,33 @@ export default function ProductFormPage() {
     name: 'relatedParties',
   });
 
-  // Populate form when editing
+  // Populate form when editing — use reset() so useFieldArray fields also update
   useEffect(() => {
     if (existingProduct) {
-      setValue('name', existingProduct.name ?? '');
-      setValue('description', existingProduct.description ?? '');
-      if (existingProduct.status) setValue('status', existingProduct.status);
-      setValue('isBundle', existingProduct.isBundle ?? false);
-      setValue('isCustomerVisible', existingProduct.isCustomerVisible ?? true);
-      setValue('specId', existingProduct.productSpecification?.id ?? '');
-      setValue('specName', existingProduct.productSpecification?.name ?? '');
-      setValue('offeringId', existingProduct.productOffering?.id ?? '');
-      setValue('offeringName', existingProduct.productOffering?.name ?? '');
-      setValue(
-        'characteristics',
-        (existingProduct.productCharacteristic ?? []).map(c => ({
+      reset({
+        name: existingProduct.name ?? '',
+        description: existingProduct.description ?? '',
+        status: existingProduct.status,
+        isBundle: existingProduct.isBundle ?? false,
+        isCustomerVisible: existingProduct.isCustomerVisible ?? true,
+        specId: existingProduct.productSpecification?.id ?? '',
+        specName: existingProduct.productSpecification?.name ?? '',
+        offeringId: existingProduct.productOffering?.id ?? '',
+        offeringName: existingProduct.productOffering?.name ?? '',
+        characteristics: (existingProduct.productCharacteristic ?? []).map(c => ({
           name: c.name ?? '',
           valueType: (c.valueType ?? 'string') as 'string' | 'boolean' | 'number' | 'integer' | 'object',
           value: c.value != null ? String(c.value) : '',
-        }))
-      );
-      setValue(
-        'relatedParties',
-        (existingProduct.relatedParty ?? []).map(rp => ({
+        })),
+        relatedParties: (existingProduct.relatedParty ?? []).map(rp => ({
           role: rp.role ?? '',
           name: rp.partyOrPartyRole?.name ?? '',
           id: rp.partyOrPartyRole?.id ?? '',
           partyType: (rp.partyOrPartyRole?.['@referredType'] ?? 'Individual') as 'Individual' | 'Organization' | 'PartyRole',
-        }))
-      );
+        })),
+      });
     }
-  }, [existingProduct, setValue]);
+  }, [existingProduct, reset]);
 
   const createMutation = useMutation({
     mutationFn: (body: Product_FVO) => createProduct(body),
@@ -159,7 +156,7 @@ export default function ProductFormPage() {
     const body = {
       '@type': 'Product',
       name: values.name,
-      description: values.description || undefined,
+      description: values.description,
       status: values.status,
       isBundle: values.isBundle,
       isCustomerVisible: values.isCustomerVisible,
@@ -229,7 +226,22 @@ export default function ProductFormPage() {
 
             <div className="space-y-1">
               <Label htmlFor="description">Description</Label>
-              <Textarea id="description" {...register('description')} placeholder="Optional description" rows={3} />
+              <Controller
+                control={control}
+                name="description"
+                render={({ field }) => (
+                  <Textarea
+                    id="description"
+                    placeholder="Optional description"
+                    rows={3}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    ref={field.ref}
+                  />
+                )}
+              />
             </div>
 
             <div className="space-y-1">
