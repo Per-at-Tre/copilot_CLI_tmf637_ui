@@ -129,10 +129,11 @@ export default function ProductFormPage() {
     mutationFn: (body: Product_FVO) => createProduct(body),
     onSuccess: (product) => {
       void queryClient.invalidateQueries({ queryKey: ['products'] });
-      toast({ title: 'Product created', description: `"${product.name}" has been created.` });
+      toast({ title: 'Product created', description: `"${product?.name ?? 'Product'}" has been created.` });
       navigate('/products');
     },
-    onError: () => {
+    onError: (err) => {
+      console.error('[ProductForm] Create error:', err);
       toast({ title: 'Create failed', description: 'Could not create the product.', variant: 'destructive' });
     },
   });
@@ -142,10 +143,11 @@ export default function ProductFormPage() {
     onSuccess: (product) => {
       void queryClient.invalidateQueries({ queryKey: ['products'] });
       void queryClient.invalidateQueries({ queryKey: ['product', id] });
-      toast({ title: 'Product updated', description: `"${product.name}" has been updated.` });
+      toast({ title: 'Product updated', description: `"${product?.name ?? 'Product'}" has been updated.` });
       navigate('/products');
     },
-    onError: () => {
+    onError: (err) => {
+      console.error('[ProductForm] Patch error:', err);
       toast({ title: 'Update failed', description: 'Could not update the product.', variant: 'destructive' });
     },
   });
@@ -153,6 +155,7 @@ export default function ProductFormPage() {
   const isPending = createMutation.isPending || patchMutation.isPending;
 
   const onSubmit = (values: ProductFormValues) => {
+    console.log('[ProductForm] onSubmit called, values:', values);
     const body = {
       '@type': 'Product',
       name: values.name,
@@ -191,7 +194,15 @@ export default function ProductFormPage() {
     }
   };
 
-  const statusValue = watch('status');
+  const onInvalid = (fieldErrors: Record<string, unknown>) => {
+    console.error('[ProductForm] Validation failed:', fieldErrors);
+    toast({
+      title: 'Validation failed',
+      description: `Fix errors in: ${Object.keys(fieldErrors).join(', ')}`,
+      variant: 'destructive',
+    });
+  };
+
 
   if (isEdit && isLoadingProduct) {
     return (
@@ -213,7 +224,7 @@ export default function ProductFormPage() {
         </h1>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
         {/* Basic Info */}
         <Card>
           <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
@@ -246,16 +257,22 @@ export default function ProductFormPage() {
 
             <div className="space-y-1">
               <Label htmlFor="status">Status</Label>
-              <Select value={statusValue ?? ''} onValueChange={v => setValue('status', v as ProductFormValues['status'])}>
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Select status..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || undefined)}>
+                    <SelectTrigger id="status">
+                      <SelectValue placeholder="Select status..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
 
             <div className="flex gap-6">
