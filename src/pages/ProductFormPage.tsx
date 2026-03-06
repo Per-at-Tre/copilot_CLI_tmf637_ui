@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
@@ -13,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import type { Product_FVO, Product_MVO } from '@/types/tmf637';
+import type { Product, Product_FVO, Product_MVO } from '@/types/tmf637';
 
 const characteristicSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -48,7 +47,32 @@ const STATUS_OPTIONS = ['created', 'pendingActive', 'active', 'suspended', 'pend
 const VALUE_TYPES = ['string', 'boolean', 'number', 'integer', 'object'] as const;
 const PARTY_TYPES = ['Individual', 'Organization', 'PartyRole'] as const;
 
-const defaultValues: ProductFormValues = {
+function toFormValues(p: Product): ProductFormValues {
+  return {
+    name: p.name ?? '',
+    description: p.description ?? '',
+    status: p.status,
+    isBundle: p.isBundle ?? false,
+    isCustomerVisible: p.isCustomerVisible ?? true,
+    specId: p.productSpecification?.id ?? '',
+    specName: p.productSpecification?.name ?? '',
+    offeringId: p.productOffering?.id ?? '',
+    offeringName: p.productOffering?.name ?? '',
+    characteristics: (p.productCharacteristic ?? []).map(c => ({
+      name: c.name ?? '',
+      valueType: (c.valueType ?? 'string') as ProductFormValues['characteristics'][number]['valueType'],
+      value: c.value != null ? String(c.value) : '',
+    })),
+    relatedParties: (p.relatedParty ?? []).map(rp => ({
+      role: rp.role ?? '',
+      name: rp.partyOrPartyRole?.name ?? '',
+      id: rp.partyOrPartyRole?.id ?? '',
+      partyType: (rp.partyOrPartyRole?.['@referredType'] ?? 'Individual') as ProductFormValues['relatedParties'][number]['partyType'],
+    })),
+  };
+}
+
+const emptyDefaults: ProductFormValues = {
   name: '',
   description: '',
   status: undefined,
@@ -62,68 +86,60 @@ const defaultValues: ProductFormValues = {
   relatedParties: [],
 };
 
+// ── Outer shell: waits for data before mounting the form ──────────────────────
+
 export default function ProductFormPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
-  const { data: existingProduct, isLoading: isLoadingProduct } = useQuery({
+  const { data: existingProduct, isLoading } = useQuery({
     queryKey: ['product', id],
     queryFn: () => getProduct(id!),
     enabled: isEdit,
   });
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    setValue,
-    watch,
-    reset,
-    formState: { errors },
-  } = useForm<ProductFormValues>({
+  if (isEdit && isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        <span className="ml-2 text-gray-500">Loading product...</span>
+      </div>
+    );
+  }
+
+  // Wait until data is available so defaultValues are correct from the start —
+  // this ensures Radix Select (and all other controlled inputs) show the right
+  // initial value without needing a reset() after mount.
+  if (isEdit && !existingProduct) return null;
+
+  return (
+    <ProductFormInner
+      id={id}
+      isEdit={isEdit}
+      defaultValues={existingProduct ? toFormValues(existingProduct) : emptyDefaults}
+    />
+  );
+}
+
+// ── Inner form: mounted only once, with correct defaultValues ─────────────────
+
+interface ProductFormInnerProps {
+  id: string | undefined;
+  isEdit: boolean;
+  defaultValues: ProductFormValues;
+}
+
+function ProductFormInner({ id, isEdit, defaultValues }: ProductFormInnerProps) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { register, handleSubmit, control, formState: { errors } } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues,
   });
 
-  const { fields: charFields, append: appendChar, remove: removeChar } = useFieldArray({
-    control,
-    name: 'characteristics',
-  });
-
-  const { fields: partyFields, append: appendParty, remove: removeParty } = useFieldArray({
-    control,
-    name: 'relatedParties',
-  });
-
-  // Populate form when editing — use reset() so useFieldArray fields also update
-  useEffect(() => {
-    if (existingProduct) {
-      reset({
-        name: existingProduct.name ?? '',
-        description: existingProduct.description ?? '',
-        status: existingProduct.status,
-        isBundle: existingProduct.isBundle ?? false,
-        isCustomerVisible: existingProduct.isCustomerVisible ?? true,
-        specId: existingProduct.productSpecification?.id ?? '',
-        specName: existingProduct.productSpecification?.name ?? '',
-        offeringId: existingProduct.productOffering?.id ?? '',
-        offeringName: existingProduct.productOffering?.name ?? '',
-        characteristics: (existingProduct.productCharacteristic ?? []).map(c => ({
-          name: c.name ?? '',
-          valueType: (c.valueType ?? 'string') as 'string' | 'boolean' | 'number' | 'integer' | 'object',
-          value: c.value != null ? String(c.value) : '',
-        })),
-        relatedParties: (existingProduct.relatedParty ?? []).map(rp => ({
-          role: rp.role ?? '',
-          name: rp.partyOrPartyRole?.name ?? '',
-          id: rp.partyOrPartyRole?.id ?? '',
-          partyType: (rp.partyOrPartyRole?.['@referredType'] ?? 'Individual') as 'Individual' | 'Organization' | 'PartyRole',
-        })),
-      });
-    }
-  }, [existingProduct, reset]);
+  const { fields: charFields, append: appendChar, remove: removeChar } = useFieldArray({ control, name: 'characteristics' });
+  const { fields: partyFields, append: appendParty, remove: removeParty } = useFieldArray({ control, name: 'relatedParties' });
 
   const createMutation = useMutation({
     mutationFn: (body: Product_FVO) => createProduct(body),
@@ -155,7 +171,6 @@ export default function ProductFormPage() {
   const isPending = createMutation.isPending || patchMutation.isPending;
 
   const onSubmit = (values: ProductFormValues) => {
-    console.log('[ProductForm] onSubmit called, values:', values);
     const body = {
       '@type': 'Product',
       name: values.name,
@@ -164,54 +179,28 @@ export default function ProductFormPage() {
       isBundle: values.isBundle,
       isCustomerVisible: values.isCustomerVisible,
       ...(values.specId ? {
-        productSpecification: { '@type': 'ProductSpecificationRef', id: values.specId, name: values.specName || undefined }
+        productSpecification: { '@type': 'ProductSpecificationRef', id: values.specId, name: values.specName || undefined },
       } : {}),
       ...(values.offeringId ? {
-        productOffering: { '@type': 'ProductOfferingRef', id: values.offeringId, name: values.offeringName || undefined }
+        productOffering: { '@type': 'ProductOfferingRef', id: values.offeringId, name: values.offeringName || undefined },
       } : {}),
       productCharacteristic: values.characteristics.map(c => ({
-        '@type': 'Characteristic',
-        name: c.name,
-        valueType: c.valueType,
-        value: c.value,
+        '@type': 'Characteristic', name: c.name, valueType: c.valueType, value: c.value,
       })),
       relatedParty: values.relatedParties.map(rp => ({
         '@type': 'RelatedPartyOrPartyRole',
         role: rp.role,
-        partyOrPartyRole: {
-          '@type': 'PartyRef',
-          '@referredType': rp.partyType,
-          id: rp.id || undefined,
-          name: rp.name,
-        },
+        partyOrPartyRole: { '@type': 'PartyRef', '@referredType': rp.partyType, id: rp.id || undefined, name: rp.name },
       })),
     };
-
-    if (isEdit) {
-      patchMutation.mutate(body as Product_MVO);
-    } else {
-      createMutation.mutate(body as Product_FVO);
-    }
+    if (isEdit) patchMutation.mutate(body as Product_MVO);
+    else createMutation.mutate(body as Product_FVO);
   };
 
   const onInvalid = (fieldErrors: Record<string, unknown>) => {
     console.error('[ProductForm] Validation failed:', fieldErrors);
-    toast({
-      title: 'Validation failed',
-      description: `Fix errors in: ${Object.keys(fieldErrors).join(', ')}`,
-      variant: 'destructive',
-    });
+    toast({ title: 'Validation failed', description: `Fix errors in: ${Object.keys(fieldErrors).join(', ')}`, variant: 'destructive' });
   };
-
-
-  if (isEdit && isLoadingProduct) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-        <span className="ml-2 text-gray-500">Loading product...</span>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -219,16 +208,16 @@ export default function ProductFormPage() {
         <Button variant="ghost" size="icon" onClick={() => navigate('/products')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {isEdit ? 'Edit Product' : 'New Product'}
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Product' : 'New Product'}</h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
+
         {/* Basic Info */}
         <Card>
           <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
           <CardContent className="space-y-4">
+
             <div className="space-y-1">
               <Label htmlFor="name">Name <span className="text-red-500">*</span></Label>
               <Input id="name" {...register('name')} placeholder="Product name" />
@@ -237,42 +226,21 @@ export default function ProductFormPage() {
 
             <div className="space-y-1">
               <Label htmlFor="description">Description</Label>
-              <Controller
-                control={control}
-                name="description"
-                render={({ field }) => (
-                  <Textarea
-                    id="description"
-                    placeholder="Optional description"
-                    rows={3}
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    name={field.name}
-                    ref={field.ref}
-                  />
-                )}
-              />
+              <Controller control={control} name="description" render={({ field }) => (
+                <Textarea id="description" placeholder="Optional description" rows={3} {...field} />
+              )} />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="status">Status</Label>
-              <Controller
-                control={control}
-                name="status"
-                render={({ field }) => (
-                  <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || undefined)}>
-                    <SelectTrigger id="status">
-                      <SelectValue placeholder="Select status..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATUS_OPTIONS.map(s => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
+              <Label>Status</Label>
+              <Controller control={control} name="status" render={({ field }) => (
+                <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || undefined)}>
+                  <SelectTrigger><SelectValue placeholder="Select status..." /></SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )} />
             </div>
 
             <div className="flex gap-6">
@@ -290,8 +258,8 @@ export default function ProductFormPage() {
 
         {/* Specification & Offering */}
         <Card>
-          <CardHeader><CardTitle>Specification & Offering</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
+          <CardHeader><CardTitle>Specification &amp; Offering</CardTitle></CardHeader>
+          <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label htmlFor="specId">Specification ID</Label>
@@ -318,14 +286,9 @@ export default function ProductFormPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Characteristics</CardTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => appendChar({ name: '', valueType: 'string', value: '' })}
-              >
-                <Plus className="h-4 w-4" />
-                Add
+              <Button type="button" variant="outline" size="sm"
+                onClick={() => appendChar({ name: '', valueType: 'string', value: '' })}>
+                <Plus className="h-4 w-4" /> Add
               </Button>
             </div>
           </CardHeader>
@@ -345,28 +308,23 @@ export default function ProductFormPage() {
                     </div>
                     <div className="space-y-1">
                       {index === 0 && <Label className="text-xs text-gray-500">Type</Label>}
-                      <Select
-                        value={watch(`characteristics.${index}.valueType`)}
-                        onValueChange={v => setValue(`characteristics.${index}.valueType`, v as 'string' | 'boolean' | 'number' | 'integer' | 'object')}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {VALUE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <Controller control={control} name={`characteristics.${index}.valueType`} render={({ field: f }) => (
+                        <Select value={f.value} onValueChange={f.onChange}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {VALUE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )} />
                     </div>
                     <div className="space-y-1">
                       {index === 0 && <Label className="text-xs text-gray-500">Value</Label>}
                       <Input {...register(`characteristics.${index}.value`)} placeholder="Value" />
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
+                    <Button type="button" variant="ghost" size="icon"
                       className="text-red-400 hover:text-red-600"
-                      onClick={() => removeChar(index)}
                       style={index === 0 ? { marginTop: '22px' } : {}}
-                    >
+                      onClick={() => removeChar(index)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -381,14 +339,9 @@ export default function ProductFormPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Related Parties</CardTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => appendParty({ role: '', name: '', id: '', partyType: 'Individual' })}
-              >
-                <Plus className="h-4 w-4" />
-                Add
+              <Button type="button" variant="outline" size="sm"
+                onClick={() => appendParty({ role: '', name: '', id: '', partyType: 'Individual' })}>
+                <Plus className="h-4 w-4" /> Add
               </Button>
             </div>
           </CardHeader>
@@ -419,24 +372,19 @@ export default function ProductFormPage() {
                     </div>
                     <div className="space-y-1">
                       {index === 0 && <Label className="text-xs text-gray-500">Type</Label>}
-                      <Select
-                        value={watch(`relatedParties.${index}.partyType`)}
-                        onValueChange={v => setValue(`relatedParties.${index}.partyType`, v as 'Individual' | 'Organization' | 'PartyRole')}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {PARTY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <Controller control={control} name={`relatedParties.${index}.partyType`} render={({ field: f }) => (
+                        <Select value={f.value} onValueChange={f.onChange}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {PARTY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )} />
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
+                    <Button type="button" variant="ghost" size="icon"
                       className="text-red-400 hover:text-red-600"
-                      onClick={() => removeParty(index)}
                       style={index === 0 ? { marginTop: '22px' } : {}}
-                    >
+                      onClick={() => removeParty(index)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
