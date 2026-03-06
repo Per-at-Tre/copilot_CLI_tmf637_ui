@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Plus, Search, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, AlertCircle, Braces } from 'lucide-react';
 import { listProducts, deleteProduct } from '@/api/productApi';
 import type { Product, ProductStatusType } from '@/types/tmf637';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ export default function ProductListPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [jsonTarget, setJsonTarget] = useState<Product | null>(null);
 
   const params = {
     offset: page * PAGE_SIZE,
@@ -159,6 +160,14 @@ export default function ProductListPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => setJsonTarget(product)}
+                        title="View JSON"
+                      >
+                        <Braces className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => navigate(`/products/${product.id}`)}
                         title="View"
                       >
@@ -220,6 +229,26 @@ export default function ProductListPage() {
           </div>
         </div>
       )}
+
+      {/* JSON Viewer Dialog */}
+      <Dialog open={!!jsonTarget} onOpenChange={open => { if (!open) setJsonTarget(null); }}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>JSON — {jsonTarget?.name ?? jsonTarget?.id}</DialogTitle>
+            <DialogDescription>{jsonTarget?.id}</DialogDescription>
+          </DialogHeader>
+          <pre className="flex-1 overflow-auto rounded-md bg-gray-950 text-gray-100 text-xs p-4 font-mono leading-relaxed">
+            {jsonTarget ? JSON.stringify(jsonTarget, null, 2) : ''}
+          </pre>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              void navigator.clipboard.writeText(JSON.stringify(jsonTarget, null, 2));
+              toast({ title: 'Copied to clipboard' });
+            }}>Copy</Button>
+            <Button onClick={() => setJsonTarget(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
