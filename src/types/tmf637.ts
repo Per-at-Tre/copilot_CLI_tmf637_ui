@@ -188,6 +188,7 @@ export interface Product {
   startDate?: string;
   terminationDate?: string;
   creationDate?: string;
+  lastUpdate?: string;
   productSerialNumber?: string;
   place?: RelatedPlaceRefOrValue[];
   relatedParty?: RelatedPartyOrPartyRole[];

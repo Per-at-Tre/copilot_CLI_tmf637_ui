@@ -130,6 +130,7 @@ export default function ProductListPage() {
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Last Modified</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Offering / Spec</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Actions</th>
               </tr>
@@ -146,6 +147,9 @@ export default function ProductListPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {formatDate(product.creationDate ?? product.startDate)}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {formatDate(product.lastUpdate)}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     <div>{product.productOffering?.name ?? product.productSpecification?.name ?? '—'}</div>
