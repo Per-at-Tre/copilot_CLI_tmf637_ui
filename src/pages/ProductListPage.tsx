@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, AlertCircle, Braces } from 'lucide-react';
+import { Plus, Search, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, AlertCircle, Braces, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { listProducts, deleteProduct } from '@/api/productApi';
 import type { Product, ProductStatusType } from '@/types/tmf637';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,14 @@ const STATUS_OPTIONS: ProductStatusType[] = [
   'created', 'pendingActive', 'active', 'suspended', 'pendingTerminate', 'terminated', 'cancelled', 'aborted'
 ];
 
+type SortField = 'name' | 'status' | 'lastUpdate';
+type SortDirection = 'asc' | 'desc';
+
+interface SortConfig {
+  field: SortField;
+  direction: SortDirection;
+}
+
 export default function ProductListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -26,6 +34,7 @@ export default function ProductListPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [jsonTarget, setJsonTarget] = useState<Product | null>(null);
 
@@ -63,9 +72,84 @@ export default function ProductListPage() {
     setPage(0);
   }, []);
 
+  const handleSort = useCallback((field: SortField) => {
+    setSortConfig(current => {
+      if (!current || current.field !== field) {
+        return { field, direction: 'asc' };
+      }
+
+      return {
+        field,
+        direction: current.direction === 'asc' ? 'desc' : 'asc',
+      };
+    });
+  }, []);
+
   const products = data?.data ?? [];
-  const totalCount = data?.totalCount ?? 0;
+  const sortedProducts = useMemo(() => {
+    if (!sortConfig) {
+      return products;
+    }
+
+    const compareText = (a?: string, b?: string) => {
+      return (a ?? '').localeCompare(b ?? '', undefined, { sensitivity: 'base' });
+    };
+
+    const sorted = [...products].sort((a, b) => {
+      let result = 0;
+
+      switch (sortConfig.field) {
+        case 'name':
+          result = compareText(a.name, b.name);
+          break;
+        case 'status':
+          result = compareText(a.status, b.status);
+          break;
+        case 'lastUpdate': {
+          const aTime = a.lastUpdate ? Date.parse(a.lastUpdate) : Number.NaN;
+          const bTime = b.lastUpdate ? Date.parse(b.lastUpdate) : Number.NaN;
+          const aValid = Number.isFinite(aTime);
+          const bValid = Number.isFinite(bTime);
+
+          if (!aValid && !bValid) {
+            result = 0;
+          } else if (!aValid) {
+            result = 1;
+          } else if (!bValid) {
+            result = -1;
+          } else {
+            result = aTime - bTime;
+          }
+          break;
+        }
+      }
+
+      if (result === 0) {
+        result = compareText(a.id, b.id);
+      }
+
+      return sortConfig.direction === 'asc' ? result : -result;
+    });
+
+    return sorted;
+  }, [products, sortConfig]);
+
+  const paginatedProducts = sortedProducts;
+
+  const renderSortIcon = (field: SortField) => {
+    if (!sortConfig || sortConfig.field !== field) {
+      return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+    }
+
+    return sortConfig.direction === 'asc'
+      ? <ArrowUp className="h-3.5 w-3.5 text-gray-700" />
+      : <ArrowDown className="h-3.5 w-3.5 text-gray-700" />;
+  };
+
+  const totalCount = (data?.totalCount ?? 0) || products.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const pageStart = totalCount === 0 ? 0 : page * PAGE_SIZE + 1;
+  const pageEnd = page * PAGE_SIZE + paginatedProducts.length;
 
   return (
     <div className="space-y-6">
@@ -128,16 +212,51 @@ export default function ProductListPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Last Modified</th>
+                <th
+                  className="px-4 py-3 text-left"
+                  aria-sort={sortConfig?.field === 'name' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                    onClick={() => handleSort('name')}
+                  >
+                    Name
+                    {renderSortIcon('name')}
+                  </button>
+                </th>
+                <th
+                  className="px-4 py-3 text-left"
+                  aria-sort={sortConfig?.field === 'status' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                    onClick={() => handleSort('status')}
+                  >
+                    Status
+                    {renderSortIcon('status')}
+                  </button>
+                </th>
+                <th
+                  className="px-4 py-3 text-left"
+                  aria-sort={sortConfig?.field === 'lastUpdate' ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                    onClick={() => handleSort('lastUpdate')}
+                  >
+                    Last Modified
+                    {renderSortIcon('lastUpdate')}
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Offering / Spec</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {products.map(product => (
+              {paginatedProducts.map(product => (
                 <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{product.name ?? '—'}</div>
@@ -145,9 +264,6 @@ export default function ProductListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={product.status} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {formatDate(product.creationDate ?? product.startDate)}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {formatDate(product.lastUpdate)}
@@ -203,8 +319,7 @@ export default function ProductListPage() {
       {!isLoading && !isError && products.length > 0 && (
         <div className="flex items-center justify-between text-sm text-gray-500">
           <span>
-            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount || products.length)} of{' '}
-            {totalCount || products.length} products
+            Showing {pageStart}–{pageEnd} of {totalCount} products
           </span>
           <div className="flex items-center gap-2">
             <Button
